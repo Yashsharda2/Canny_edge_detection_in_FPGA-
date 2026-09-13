@@ -1,17 +1,22 @@
-module top (
-    input clk,
-    input rst,
-    // Pixel Input Interface
-    input [7:0] i_data,
-    input i_data_valid,
-    // Processed Pixel Output Interface
-    output [7:0] o_data,
-    output o_data_valid,
-    // Line Buffer Interrupt Output
-    output o_intr
+module top #(
+    parameter IMG_WIDTH = 320,  // 320x240
+    parameter ADDR_WIDTH = 9   
+)(
+    input  pclk,        
+    input  [7:0] p_in,  
+    output p_out        
 );
 
-    // Interconnect Wires
+    // Internal Reset Generation
+    reg [3:0] rst_cnt = 0;
+    wire rst = ~&rst_cnt;
+    always @(posedge pclk) begin
+        if (rst) rst_cnt <= rst_cnt + 1'b1;
+    end
+
+    wire i_data_valid = ~rst; 
+
+  
     wire [71:0] data_to_gb;
     wire        data_to_gb_valid;
     wire [7:0]  data_from_gb;
@@ -36,21 +41,24 @@ module top (
 
     wire [71:0] data_to_et;
     wire        data_to_et_valid;
+    
+    wire [7:0]  canny_out;
+    wire        out_valid;
 
-    // Stage 1: Line Buffer for Gaussian Blur
-    imageControl IC1 (
-        .i_clk(clk),
+    // Line Buffer for Gaussian Blur
+    imageControl #(.DATA_WIDTH(8), .ADDR_WIDTH(ADDR_WIDTH), .LINE_WIDTH(IMG_WIDTH)) IC1 (
+        .i_clk(pclk),
         .i_rst(rst),
-        .i_pixel_data(i_data),
+        .i_pixel_data(p_in),
         .i_pixel_data_valid(i_data_valid),
         .o_pixel_data(data_to_gb),
         .o_pixel_data_valid(data_to_gb_valid),
-        .o_intr(o_intr)
+        .o_intr()
     );
 
-    // Stage 2: Gaussian Blur Filter
+    // Gaussian Blur Filter
     gaussianBlur gb (
-        .clk(clk),
+        .clk(pclk),
         .rst(rst),
         .p_in(data_to_gb),
         .p_valid(data_to_gb_valid),
@@ -58,9 +66,9 @@ module top (
         .c_valid(data_from_gb_valid)
     );
 
-    // Stage 3: Line Buffer for Sobel 
-    imageControl IC2 (
-        .i_clk(clk),
+    // Line Buffer for Sobel
+    imageControl #(.DATA_WIDTH(8), .ADDR_WIDTH(ADDR_WIDTH), .LINE_WIDTH(IMG_WIDTH)) IC2 (
+        .i_clk(pclk),
         .i_rst(rst),
         .i_pixel_data(data_from_gb),
         .i_pixel_data_valid(data_from_gb_valid),
@@ -69,9 +77,9 @@ module top (
         .o_intr()
     );
 
-    // Stage 4: Single-Cycle Sobel Filter
+    // Sobel Filter
     sobel s1 (
-        .clk(clk),
+        .clk(pclk),
         .rst(rst),
         .p_in(data_to_sobel),
         .p_valid(data_to_sobel_valid),
@@ -80,9 +88,9 @@ module top (
         .c_valid(data_from_sobel_valid)
     );
 
-    // Stage 5a: Magnitude Line Buffer for NMS
-    imageControl IC3 (
-        .i_clk(clk),
+    // Magnitude Line Buffer for NMS
+    imageControl #(.DATA_WIDTH(8), .ADDR_WIDTH(ADDR_WIDTH), .LINE_WIDTH(IMG_WIDTH)) IC3 (
+        .i_clk(pclk),
         .i_rst(rst),
         .i_pixel_data(mag_from_sobel),
         .i_pixel_data_valid(data_from_sobel_valid),
@@ -91,9 +99,9 @@ module top (
         .o_intr()
     );
 
-    // Stage 5b: Direction Line Buffer for NMS
-    imageControl IC4 (
-        .i_clk(clk),
+    // Direction Line Buffer for NMS
+    imageControl #(.DATA_WIDTH(8), .ADDR_WIDTH(ADDR_WIDTH), .LINE_WIDTH(IMG_WIDTH)) IC4 (
+        .i_clk(pclk),
         .i_rst(rst),
         .i_pixel_data(dir_from_sobel),
         .i_pixel_data_valid(data_from_sobel_valid),
@@ -102,9 +110,9 @@ module top (
         .o_intr()
     );
 
-    // Stage 6: Non-Maximum Suppression
+    // Non-Maximum Suppression
     non_max_suppr n1 (
-        .clk(clk),
+        .clk(pclk),
         .mag_data(mag_to_nms),
         .mag_valid(mag_to_nms_valid),
         .dir_data(dir_to_nms),
@@ -113,18 +121,18 @@ module top (
         .p_vld(data_from_nms_valid)
     );
 
-    // Stage 7: Double Thresholding
+    // Double Thresholding
     double_threshold dt1 (
-        .clk(clk),
+        .clk(pclk),
         .data_in(data_from_nms),
         .data_in_valid(data_from_nms_valid),
         .data_out(data_from_dt),
         .data_out_valid(data_from_dt_valid)
     );
 
-    // Stage 8: Line Buffer for Edge Tracking
-    imageControl IC5 (
-        .i_clk(clk),
+    // Line Buffer for Edge Tracking
+    imageControl #(.DATA_WIDTH(8), .ADDR_WIDTH(ADDR_WIDTH), .LINE_WIDTH(IMG_WIDTH)) IC5 (
+        .i_clk(pclk),
         .i_rst(rst),
         .i_pixel_data(data_from_dt),
         .i_pixel_data_valid(data_from_dt_valid),
@@ -133,13 +141,16 @@ module top (
         .o_intr()
     );
 
-    // Stage 9: Edge Tracking
+    // Edge Tracking
     edge_track et1 (
-        .clk(clk),
+        .clk(pclk),
         .data_in(data_to_et),
         .data_in_valid(data_to_et_valid),
-        .data_out(o_data),
-        .data_out_valid(o_data_valid)
+        .data_out(canny_out),
+        .data_out_valid(out_valid)
     );
+
+    // 8-bit output to 1-bit
+    assign p_out = (canny_out > 8'd0) ? 1'b1 : 1'b0;
 
 endmodule
