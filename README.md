@@ -125,4 +125,5 @@ Everything runs as a continuous stream of pixels. No full frame is ever stored i
 | LCD_BL   | 17          |
 
 
-(netlist/canny_netlist.png)
+## Canny Netlist
+![Canny Netlist](netlist/canny_netlist.png)
