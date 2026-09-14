@@ -34,8 +34,9 @@ module tb_top;
     // Clock Generation (50 MHz)
     always #10 pclk = ~pclk;
 
-
+    // Monitor Input and Output Latency
     always @(posedge pclk) begin
+        // Corrected uut.p_valid -> uut.i_data_valid
         if (uut.i_data_valid) begin
             input_pixel_count <= input_pixel_count + 1;
         end
@@ -61,6 +62,7 @@ module tb_top;
         end
     end
 
+    // Main Test Stimulus
     initial begin
         pclk = 0;
         p_in = 8'd0;
@@ -68,7 +70,7 @@ module tb_top;
         // Open Input Binary File
         in_file = $fopen("input.bin", "rb");
         if (!in_file) begin
-            $display("[ERROR] Could not open 'input.bin'.");
+            $display("[ERROR] Could not open 'input.bin'. Ensure the file exists in the simulation run directory.");
             $finish;
         end
         
@@ -79,6 +81,7 @@ module tb_top;
         // Open Output Binary File 
         out_file = $fopen("output.bin", "wb");
 
+        // Wait for internal reset generation (rst_cnt counts up to 15)
         #400; 
 
         // Stream Pixels into DUT
@@ -87,12 +90,13 @@ module tb_top;
             @(negedge pclk); 
         end
 
-        // Stream zeros 
+        // Stream zeros while waiting for pipeline flushing
         p_in = 8'd0;
         while (pixels_written < TOTAL_PIXELS) begin
             @(negedge pclk);
         end
 
+        // Flush remaining bits if total output bit count is not aligned to full bytes
         if (bit_cnt > 0) begin
             bit_buf = bit_buf >> (8 - bit_cnt);
             $fwrite(out_file, "%c", bit_buf);
